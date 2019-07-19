@@ -51,7 +51,7 @@ struct sockaddr_in inet_resolve(const char *sockname);
 static char buff[BUFF_SIZE];
 
 static char ttynam[TTYLEN+1] = "";
-static int ptyfd = -1;
+//static int ptyfd = -1;
 
 static int fdmax = 0;
 
@@ -61,27 +61,27 @@ static char    *backend = NULL,
   *outfilename = NULL,
   *opt_ptyname = NULL,
   *opt_ttyname = NULL;
-static int     verbose = 0,
-  linebuff = 0,
-  quiet = 0,
-  timestamp = 0,
-  use_eol_ch = 0,
-  print_hex = 1,
-  print_chrs = 1;
+static int  verbose = 0,
+            linebuff = 0,
+            quiet = 0,
+            timestamp = 0,
+            use_eol_ch = 0,
+            print_hex = 1,
+            print_chrs = 1;
 static char    eol_ch = 0;
 static int     created_link = 0;
-static char    last_pty[TTYLEN] = "",
-  last_tty[TTYLEN] = "";
+//static char    last_pty[TTYLEN] = "",
+//               last_tty[TTYLEN] = "";
 static pid_t child_pid = 0;
 static int please_die_now = 0;
 static int listenfd = 0;
 
-static mode_t frontend_mode = -1;
-static uid_t frontend_owner = -1;
-static gid_t frontend_group = -1;
-static uid_t switch_uid = -1;
-static gid_t switch_gid = -1;
-static char *switch_root = NULL;
+static mode_t frontend_mode = 0;
+static uid_t  frontend_owner = (uid_t)-1;
+static gid_t  frontend_group = (gid_t)-1;
+static uid_t  switch_uid = (uid_t)-1;
+static gid_t  switch_gid = (gid_t)-1;
+static char  *switch_root = NULL;
 
 static int no_closedown = 0,
            lastSig = 0;
@@ -260,7 +260,7 @@ const char *char_repr(char chr)
 }
 
 
-void dumpbuff(int dir, char *buf, int buflen)
+void dumpbuff(int dir, char *buf, ssize_t buflen)
 {
   int i;
   int ic;
@@ -282,7 +282,7 @@ void dumpbuff(int dir, char *buf, int buflen)
         char dtime[9];
         struct tm *now = localtime(&timeVal.tv_sec);
         strftime(dtime, sizeof(dtime), "%H:%M %S", now);
-        snprintf(tstamp, sizeof(tstamp), "[%s.%06ld]", dtime, timeVal.tv_usec);
+        snprintf(tstamp, sizeof(tstamp), "[%s.%06ld]", dtime, (long)timeVal.tv_usec);
         //snprintf(tstamp, TSTAMP_SZ, "[%s:%s]   ", sec, usec);
       }
       else if (tstamp[0] == '[')
@@ -636,7 +636,7 @@ int setup_front_tty(char *frontend, int f[2])
   /* Now set permissions, owners, etc. */
   if (geteuid() == 0)
   {
-    if ((frontend_mode == -1) && !strchr("@!=",backend[0]))
+    if (((frontend_mode & S_IFMT) == 0) && !strchr("@!=",backend[0]))
     {
       if (stat(backend, &st) < 0)
         errorf("Couldn't stat backend device '%s': %s\n",backend,strerror(errno));
@@ -644,7 +644,7 @@ int setup_front_tty(char *frontend, int f[2])
       frontend_owner = st.st_uid;
       frontend_group = st.st_gid;
     }
-    if (frontend_mode != -1) {
+    if ((frontend_mode & S_IFMT) != 0) {
       /* Set up permissions on the pty slave */
       if (stat(ttynam, &st) < 0)
         errorf("Couldn't stat tty '%s': %s\n",ttynam,strerror(errno));
@@ -798,8 +798,8 @@ extern int optind;
 int main (int argc, char *argv[])
 {
   fd_set readset;
-  int n, sel;
-  int c, errflg=0;
+  ssize_t n;
+  int c, sel, errflg=0;
   int backfd[2], frontfd[2];
   struct sigaction sigact;
   sigset_t sigmask;
@@ -849,7 +849,7 @@ int main (int argc, char *argv[])
             scratch = next_scratch;
           }
         }
-        frontend_mode = strtol(scratch,NULL,8);
+        frontend_mode = (mode_t)strtol(scratch,NULL,8);
         break;
       case 'u':
         switch_uid = find_uid(optarg);
@@ -939,7 +939,7 @@ int main (int argc, char *argv[])
     if (chroot(switch_root) != 0)
       errorf("chroot(%s) failed: %s\n",switch_root,strerror(errno));
   }
-  if (switch_gid != -1)
+  if (switch_gid != (gid_t)-1)
   {
     if (setgroups(1,&switch_gid) == -1)
       errorf("setgroups(1,[%d]) failed: %s\n",switch_gid, strerror(errno));
@@ -950,7 +950,7 @@ int main (int argc, char *argv[])
     if (getegid() != switch_gid)
       errorf("setregid succeeded, but we're the wrong effective gid!");
   }
-  if (switch_uid != -1)
+  if (switch_uid != (uid_t)-1)
   {
     if (setreuid(switch_uid, switch_uid) == -1)
       errorf("setreuid(%d,%d) failed: %s\n",switch_uid,switch_uid,strerror(errno));
@@ -1018,7 +1018,7 @@ int main (int argc, char *argv[])
       else
       {
         /* We should handle this better.  FIX */
-        if (write (frontfd[1], buff, n) != n)
+        if (write (frontfd[1], buff, (size_t)n) != n)
           errorf("Error writing to frontend device: %s\n",strerror(errno));
         if (!quiet)
          dumpbuff(1,buff,n);
@@ -1054,7 +1054,7 @@ int main (int argc, char *argv[])
       }
       else
       {
-        if (write (backfd[1], buff, n) != n)
+        if (write (backfd[1], buff, (size_t)n) != n)
           errorf("Error writing to backend device: %s\n",strerror(errno));
         if (!quiet)
           dumpbuff(0,buff,n);
