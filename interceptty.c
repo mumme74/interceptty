@@ -46,46 +46,47 @@
 struct sockaddr_in inet_resolve(const char *sockname);
 
 
-#define BUFF_SIZE	256
+#define BUFF_SIZE    256
 
-char buff[BUFF_SIZE];
+static char buff[BUFF_SIZE];
 
-char ttynam[TTYLEN+1] = "";
-int ptyfd = -1;
+static char ttynam[TTYLEN+1] = "";
+static int ptyfd = -1;
 
-int fdmax = 0;
+static int fdmax = 0;
 
-char    *backend = NULL,
+static char    *backend = NULL,
   *frontend = DEFAULT_FRONTEND,
   *settings = NULL,
   *outfilename = NULL,
   *opt_ptyname = NULL,
   *opt_ttyname = NULL;
-int     verbose = 0,
+static int     verbose = 0,
   linebuff = 0,
   quiet = 0,
   timestamp = 0,
   use_eol_ch = 0,
   print_hex = 1,
   print_chrs = 1;
-char    eol_ch = 0;
-int     created_link = 0;
-char    last_pty[TTYLEN] = "",
+static char    eol_ch = 0;
+static int     created_link = 0;
+static char    last_pty[TTYLEN] = "",
   last_tty[TTYLEN] = "";
-pid_t child_pid = 0;
-int please_die_now = 0;
-int listenfd = 0;
+static pid_t child_pid = 0;
+static int please_die_now = 0;
+static int listenfd = 0;
 
-mode_t frontend_mode = -1;
-uid_t frontend_owner = -1;
-gid_t frontend_group = -1;
-uid_t switch_uid = -1;
-gid_t switch_gid = -1;
-char *switch_root = NULL;
+static mode_t frontend_mode = -1;
+static uid_t frontend_owner = -1;
+static gid_t frontend_group = -1;
+static uid_t switch_uid = -1;
+static gid_t switch_gid = -1;
+static char *switch_root = NULL;
 
-int no_closedown = 0;
+static int no_closedown = 0,
+           lastSig = 0;
 
-FILE *outfile;
+static FILE *outfile;
 
 /* find & open a pty to be used by the pty-master */
 
@@ -148,12 +149,12 @@ int create_pty (int *ptyfd, char *ttynam)
     errorf("can't open pty '%s'\n",name);
 
   return 1;
-}		
+}
 
 /* do a graceful closedown */
 
 void closedown (void)
-{	
+{
   if (no_closedown)
     return;
   stty_orig ();
@@ -173,26 +174,27 @@ void closedown (void)
 
 void sighup (int sig)
 {
-  sig = sig;
+  lastSig = sig;
   closedown ();
 }
 
 void sigpipe (int sig)
 {
-  sig = sig;
-	
+  lastSig = sig;
+
   signal (SIGPIPE, sigpipe);
 }
 
 void sigint(int sig)
 {
-  sig = sig;
+  lastSig = sig;
   closedown();
   _exit(1);
 }
 
 void sigdeath(int sig)
 {
+  (void)sig;
   please_die_now=1;
 }
 
@@ -214,7 +216,7 @@ uid_t find_uid(const char *u)
   struct passwd *pw;
 
   if (alldigits(u))
-    return atoi(u);
+    return (uid_t)atoi(u);
   
   if (!(pw = getpwnam(u)))
     errorf("Error finding user '%s': %s\n",u,strerror(errno));
@@ -226,7 +228,7 @@ gid_t find_gid(const char *g)
   struct group *gr;
 
   if (alldigits(g))
-    return atoi(g);
+    return (gid_t)atoi(g);
   if (!(gr = getgrnam(g)))
     errorf("Error finding group '%s': %s\n",g,strerror(errno));
   return gr->gr_gid;
@@ -234,8 +236,9 @@ gid_t find_gid(const char *g)
 
 /* main program */
 
-const char *char_repr(unsigned char ch)
+const char *char_repr(char chr)
 {
+  unsigned char ch = (unsigned char)chr;
   enum { RESP_SZ = 6, LOW_CRTL_SZ = 33 };
   static char response[RESP_SZ] = {0};
   /* https://en.wikipedia.org/wiki/Control_character */
@@ -440,11 +443,11 @@ struct sockaddr_in inet_resolve(const char *sockname)
   
   if (!(he = gethostbyname(hostname)))
     errorf("Couldn't resolve name '%s': %s.\n",hostname,
-	   (h_errno == HOST_NOT_FOUND) ? "Host not found" :
-	   ((h_errno == NO_ADDRESS)||(h_errno == NO_DATA)) ? "No data available" :
-	   (h_errno == NO_RECOVERY) ? "A non-recoverable name server error occured" :
-	   (h_errno == TRY_AGAIN) ? "A temporary error occured." :
-	   "An unknown error occured");
+       (h_errno == HOST_NOT_FOUND) ? "Host not found" :
+       ((h_errno == NO_ADDRESS)||(h_errno == NO_DATA)) ? "No data available" :
+       (h_errno == NO_RECOVERY) ? "A non-recoverable name server error occured" :
+       (h_errno == TRY_AGAIN) ? "A temporary error occured." :
+       "An unknown error occured");
 
   memcpy(&(sa.sin_addr),he->h_addr,he->h_length);
       
@@ -497,25 +500,25 @@ int setup_back_program(char *backend, int f[2])
     case 0:
       /* Child */
       if (close(sock[0]) != 0) {
-	errorf("Error in close(sock[0]): %s\n",strerror(errno));
+    errorf("Error in close(sock[0]): %s\n",strerror(errno));
       }
 
       if (close(STDIN_FILENO) != 0) {
-	errorf("Error in close(STDIN_FILENO): %s\n",strerror(errno));
+    errorf("Error in close(STDIN_FILENO): %s\n",strerror(errno));
       }
       if (dup2(sock[1],STDIN_FILENO) != STDIN_FILENO) {
-	errorf("Error in dup2(sock[1],STDIN_FILENO): %s\n",strerror(errno));
+    errorf("Error in dup2(sock[1],STDIN_FILENO): %s\n",strerror(errno));
       }
 
       if (close(STDOUT_FILENO) != 0) {
-	errorf("Error in close(STDOUT_FILENO): %s\n",strerror(errno));
+    errorf("Error in close(STDOUT_FILENO): %s\n",strerror(errno));
       }
       if (dup2(sock[1],STDOUT_FILENO) != STDOUT_FILENO) {
-	errorf("Error in dup2(sock[1],STDOUT_FILENO): %s\n",strerror(errno));
+    errorf("Error in dup2(sock[1],STDOUT_FILENO): %s\n",strerror(errno));
       }
       
       if (close(sock[1]) != 0) {
-	errorf("Error in close(sock[1]): %s\n",strerror(errno));
+    errorf("Error in close(sock[1]): %s\n",strerror(errno));
       }
 
       execl("/bin/sh","sh","-c",backend,NULL);
@@ -636,7 +639,7 @@ int setup_front_tty(char *frontend, int f[2])
     if ((frontend_mode == -1) && !strchr("@!=",backend[0]))
     {
       if (stat(backend, &st) < 0)
-	errorf("Couldn't stat backend device '%s': %s\n",backend,strerror(errno));
+        errorf("Couldn't stat backend device '%s': %s\n",backend,strerror(errno));
       frontend_mode = st.st_mode;
       frontend_owner = st.st_uid;
       frontend_group = st.st_gid;
@@ -644,14 +647,14 @@ int setup_front_tty(char *frontend, int f[2])
     if (frontend_mode != -1) {
       /* Set up permissions on the pty slave */
       if (stat(ttynam, &st) < 0)
-	errorf("Couldn't stat tty '%s': %s\n",ttynam,strerror(errno));
+        errorf("Couldn't stat tty '%s': %s\n",ttynam,strerror(errno));
 
       fix_perms_after_exit(ttynam,st); /* This will create a monitor process */
 
       if (chown(ttynam, frontend_owner, frontend_group) < 0)
-	errorf("Couldn't chown backend device to uid=%d, gid=%d: %s\n",st.st_uid,st.st_gid,strerror(errno));
+        errorf("Couldn't chown backend device to uid=%d, gid=%d: %s\n",st.st_uid,st.st_gid,strerror(errno));
       if (chmod(ttynam, frontend_mode & 07777) < 0)
-	errorf("Couldn't set permissions on tty '%s': %s\n",strerror(errno));
+        errorf("Couldn't set permissions on tty '%s': %s\n",strerror(errno));
     }
   }
   /* Now make the symlink */
@@ -809,8 +812,8 @@ int main (int argc, char *argv[])
   while ((c = getopt(argc, argv, "VTlqvs:o:p:t:m:u:g:/:e:f:")) != EOF)
     switch (c) {
       case 'q':
-	quiet=1;
-	break;
+        quiet=1;
+        break;
       case 'v':
         verbose = 1;
         break;
@@ -824,39 +827,39 @@ int main (int argc, char *argv[])
         opt_ttyname = optarg;
         break;
       case 'm':
-	/* mode for pty: [user,[group,]]mode */
-	scratch = strdup(optarg);
-	if ((next_scratch = strchr(scratch,',')) != NULL) {
-	  /* Username */
-	  *next_scratch = '\0';
-	  next_scratch++;
+        /* mode for pty: [user,[group,]]mode */
+        scratch = strdup(optarg);
+        if ((next_scratch = strchr(scratch,',')) != NULL) {
+          /* Username */
+          *next_scratch = '\0';
+          next_scratch++;
 
-	  frontend_owner = find_uid(scratch);
+          frontend_owner = find_uid(scratch);
 
-	  scratch = next_scratch;
+          scratch = next_scratch;
 
-	  if ((next_scratch = strchr(scratch,',')) != NULL)
-	  {
-	    /* Group */
-	    *next_scratch = '\0';
-	    next_scratch++;
-	    
-	    frontend_group = find_gid(scratch);
+          if ((next_scratch = strchr(scratch,',')) != NULL)
+          {
+            /* Group */
+            *next_scratch = '\0';
+            next_scratch++;
 
-	    scratch = next_scratch;
-	  }
-	}
-	frontend_mode = strtol(scratch,NULL,8);
-	break;
+            frontend_group = find_gid(scratch);
+
+            scratch = next_scratch;
+          }
+        }
+        frontend_mode = strtol(scratch,NULL,8);
+        break;
       case 'u':
-	switch_uid = find_uid(optarg);
-	break;
+        switch_uid = find_uid(optarg);
+        break;
       case 'g':
-	switch_gid = find_gid(optarg);
-	break;
+        switch_gid = find_gid(optarg);
+        break;
       case '/':
         switch_root = strdup(optarg);
-	break;
+        break;
       case 's':
         settings = optarg;
         break;
@@ -870,7 +873,7 @@ int main (int argc, char *argv[])
         use_eol_ch = 1;
 
         n = (int)strnlen(optarg, 10);
-        sel = strtol(optarg, &scratch, 0);
+        sel = (int)strtol(optarg, &scratch, 0);
         if (scratch == optarg + n && n > 0)
         {
           /* its a number */
@@ -892,8 +895,8 @@ int main (int argc, char *argv[])
           errorf("Must give either 'hex' or 'char' to -f switch\n");
         break;
       case 'V':
-	puts(VERSION);
-	exit(0);
+        puts(VERSION);
+        exit(0);
       case 'T':
         timestamp = 1;
         break;
@@ -996,29 +999,29 @@ int main (int argc, char *argv[])
     {
       if ((n = read(backfd[0], buff, BUFF_SIZE)) == 0)
       {
-	/* Serial port has closed.  This doesn't really make sense for
-	 * a real serial port, but for sockets and programs, probably
-	 * we should just exit.
-	 */
-	if (!quiet)
-	  errorf("Backend device was closed.\n");
-	break;
+        /* Serial port has closed.  This doesn't really make sense for
+         * a real serial port, but for sockets and programs, probably
+         * we should just exit.
+         */
+        if (!quiet)
+          errorf("Backend device was closed.\n");
+        break;
       }
       else if (n < 0)
       {
-	if ( (errno != EAGAIN) && (errno != EINTR) )
-	{
-	  errorf("Error reading from backend device: %s\n",strerror(errno));
-	}
-	break;
+        if ( (errno != EAGAIN) && (errno != EINTR) )
+        {
+          errorf("Error reading from backend device: %s\n",strerror(errno));
+        }
+        break;
       }
       else
       {
-	/* We should handle this better.  FIX */
+        /* We should handle this better.  FIX */
         if (write (frontfd[1], buff, n) != n)
-	  errorf("Error writing to frontend device: %s\n",strerror(errno));
+          errorf("Error writing to frontend device: %s\n",strerror(errno));
         if (!quiet)
-	  dumpbuff(1,buff,n);
+         dumpbuff(1,buff,n);
       }
     }
 
@@ -1040,24 +1043,23 @@ int main (int argc, char *argv[])
       }
       else if (n <= 0)
       {
-	if ( (errno == EAGAIN) || (errno == EINTR) )
-	{
-	  /* No real error */
-	}
-	else
-	{
-	  errorf("Error reading from frontend device: %s\n",strerror(errno));
-	}
+        if ( (errno == EAGAIN) || (errno == EINTR) )
+        {
+          /* No real error */
+        }
+        else
+        {
+          errorf("Error reading from frontend device: %s\n",strerror(errno));
+        }
       }
       else
       {
         if (write (backfd[1], buff, n) != n)
-	  errorf("Error writing to backend device: %s\n",strerror(errno));
-	if (!quiet)
-	  dumpbuff(0,buff,n);
+          errorf("Error writing to backend device: %s\n",strerror(errno));
+        if (!quiet)
+          dumpbuff(0,buff,n);
       }
     }
-
   }
   stty_orig();
   exit(0);

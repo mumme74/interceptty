@@ -17,7 +17,7 @@
 static struct termios orig_tty_state[TTY_STORE];
 static int sttyfds[TTY_STORE];
 
-void errorf (char *fmt, ...)
+void errorf (const char *fmt, ...)
 {
   va_list args;
 	
@@ -26,15 +26,16 @@ void errorf (char *fmt, ...)
   exit (1);
 }
 
-int fdprintf (int fd, char *fmt, ...)
+int fdprintf (int fd, const char *fmt, ...)
 {
   va_list args;
   int r;
   char str[256];
 
   va_start (args, fmt);
-  r = vsprintf(str, fmt, args);
-  write (fd, str, r);
+  r = vsnprintf(str, sizeof(str), fmt, args);
+  if (r > 0)
+    write (fd, str, (size_t)r);
 
   return (r);
 }
@@ -78,9 +79,9 @@ int stty_raw (int fd)
       break;
     }
 	
-  tty_state.c_lflag &= ~(ICANON | IEXTEN | ISIG | ECHO);
-  tty_state.c_iflag &= ~(ICRNL | INPCK | ISTRIP | IXON | BRKINT);
-  tty_state.c_oflag &= ~OPOST;
+  tty_state.c_lflag &= ~(unsigned)(ICANON | IEXTEN | ISIG | ECHO);
+  tty_state.c_iflag &= ~(unsigned)(ICRNL | INPCK | ISTRIP | IXON | BRKINT);
+  tty_state.c_oflag &= ~(unsigned)OPOST;
   tty_state.c_cflag |= CS8;
 	
   tty_state.c_cc[VMIN]  = 1;
