@@ -33,6 +33,7 @@
 #include <grp.h>
 #include <sys/time.h>
 #include <time.h>
+#include <assert.h>
 
 #include "bsd-openpty.h"
 #include "common.h"
@@ -468,21 +469,53 @@ struct sockaddr_in inet_resolve(const char *sockname)
 
 int setup_back_tty(char *backend, int f[2])
 {
-  int serialfd;
-  
+  int end = 1,
+      flags[2];
+  char *backends[2];
+
+  backends[0] = backend;
+
+  assert(backend != NULL && "Backend path not valid");
+
+#ifdef __APPLE__
+  /* on macos you write to /dev/cuXXX and read from /dev/ttyXXX */
+  char cuPath[TTYLEN+1];
+  size_t len = strnlen(backend, sizeof (cuPath));
+  char *pos = &backend[len -1];
+  while ((*pos != '/') && (--pos != backend));
+  if (pos == &backend[len -1])
+      errorf("invalid backendPath, end with '/': %s\n", backend);
+  strncpy(cuPath, backend, pos - backend +1);
+  strncpy(&cuPath[pos-backend+1], "cu", 2);
+  strncpy(&cuPath[pos-backend+3], &pos[4], len - (size_t)(pos - backend -4));
+  backends[0] = cuPath;
+  end = 1;
+  flags[0] = O_RDONLY | O_NOCTTY | O_SYNC; // O_NONBLOCK
+  flags[1] = O_WRONLY | O_NOCTTY | O_SYNC;
+#else
+  flags[0] = O_RDWR | O_NOCTTY | O_SYNC;
+  flags[1] = flags[0];
+#endif
+
   /* Open the serial port */
-  serialfd = open(backend, O_RDWR | O_NOCTTY | O_SYNC | O_NOCTTY);
-  if (serialfd < 0)
-    errorf("error opening backend device '%s': %s\n",backend,strerror(errno));
-  if (stty_raw(serialfd) != 0)
-    errorf("Error putting serial device '%s' in raw mode: %s\n",backend,strerror(errno));
-  
-  /* Process settings from the -s switch */
-  if (settings) {
-    fstty(serialfd,settings);
+  for (size_t i = 0; i < end; ++i) {
+      f[i] = open(backends[i], flags[i]);
+      printf("fd[%lu] %d\n", i, errno);
+      if (f[i] < 0)
+        errorf("error opening backend device '%s': %s\n",backends[i],strerror(errno));
+      if (stty_raw(f[i]) != 0)
+        errorf("Error putting serial device '%s' in raw mode: %s\n",backends[i],strerror(errno));
+
+      /* Process settings from the -s switch */
+      if (settings) {
+        fstty(f[i], settings);
+      }
   }
 
-  return f[0]=f[1]=serialfd;
+  if (end < 2)
+    f[1]=f[0];
+
+  return *f;
 }
 
 int setup_back_program(char *backend, int f[2])
@@ -1054,7 +1087,8 @@ int main (int argc, char *argv[])
       }
       else
       {
-        if (write (backfd[1], buff, (size_t)n) != n)
+        ssize_t p = write (backfd[1], buff, (size_t)n) ;
+        if (p != n)
           errorf("Error writing to backend device: %s\n",strerror(errno));
         if (!quiet)
           dumpbuff(0,buff,n);
